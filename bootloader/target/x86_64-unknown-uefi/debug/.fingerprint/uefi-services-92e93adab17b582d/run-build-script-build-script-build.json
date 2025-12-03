@@ -1,0 +1,1 @@
+{"rustc":7125697762750868813,"features":"","declared_features":"","target":0,"profile":0,"path":0,"deps":[[8352487169547042316,"build_script_build",false,2850083904255681005]],"local":[{"Precalculated":"0.26.0"}],"rustflags":["-C","link-arg=-Tlinker.ld","-C","link-arg=-nostdlib","-C","relocation-model=pic"],"config":0,"compile_kind":0}
