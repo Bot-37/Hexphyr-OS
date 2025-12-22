@@ -149,7 +149,7 @@ License will be added once the core architecture stabilizes.
 ## 🧭 Disclaimer
 
 Hexphyr OS is an **experimental educational operating system**.  
-Do **NOT** use it on real hardware.
+Do **NOT** use it on real hardware until production is done.
 
 ---
 
