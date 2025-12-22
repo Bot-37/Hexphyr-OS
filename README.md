@@ -224,15 +224,3 @@ The goal is **control, understanding, and correctness**.
 
 Hexphyr OS is maintained by its creator.  
 All architectural decisions are centralized to prevent fragmentation.
-
----
-
-## 15. Final Note
-
-This document must be updated **every time**:
-- A new subsystem is added
-- A design decision changes
-- A responsibility shifts
-
-If the documentation is outdated, the repository is considered **invalid**.
-
