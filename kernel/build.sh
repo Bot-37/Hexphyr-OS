@@ -24,8 +24,10 @@ cp "${KERNEL_ELF}" "${BOOT_DIR}/kernel.elf"
 
 # 4) Copy grub.cfg
 cat > "${GRUB_DIR}/grub.cfg" <<'EOF'
-set timeout=5
+set timeout=0
 set default=0
+set gfxmode=1024x768x32
+set gfxpayload=keep
 
 menuentry "Hexphyr OS" {
   multiboot2 /boot/kernel.elf

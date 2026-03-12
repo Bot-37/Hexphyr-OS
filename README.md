@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Hexphyr OS — Repository Documentation
 
 This document describes the **actual implemented work**, **current structure**, and **intended execution flow** of the Hexphyr OS repository.
@@ -224,3 +225,58 @@ The goal is **control, understanding, and correctness**.
 
 Hexphyr OS is maintained by its creator.  
 All architectural decisions are centralized to prevent fragmentation.
+=======
+# Hexphyr OS
+
+Hexphyr is an experimental x86_64 kernel with a Multiboot2 boot path and a minimal framebuffer GUI.
+
+## Local Simulation
+
+Run directly on the host:
+
+```bash
+cd kernel
+./build.sh
+./run.sh
+```
+
+Headless serial-only mode:
+
+```bash
+HEXPHYR_HEADLESS=1 ./run.sh
+```
+
+GUI mode (requires a working local display server):
+
+```bash
+HEXPHYR_HEADLESS=0 ./run.sh
+```
+
+## Docker Simulation
+
+Build the image:
+
+```bash
+docker build -t hexphyr-os:dev .
+```
+
+Build and run simulation in one step:
+
+```bash
+./tools/docker-sim.sh
+```
+
+Run simulation directly from repo root (headless by default):
+
+```bash
+SIM_TIMEOUT_SEC=25 ./tools/simulate-kernel.sh
+```
+
+Or via Make:
+
+```bash
+make docker-sim
+```
+
+`tools/docker-sim.sh` and `tools/simulate-kernel.sh` run QEMU headless by default (`HEXPHYR_HEADLESS=1`) and exit after `SIM_TIMEOUT_SEC` seconds (default `25`).
+>>>>>>> 877ab78 (Add Docker support and enhance kernel simulation)

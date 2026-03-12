@@ -1,7 +1,7 @@
 use core::fmt;
 use lazy_static::lazy_static;
-use spin::Mutex;
 use log::{Level, Log, Metadata, Record};
+use spin::Mutex;
 
 const COM1: u16 = 0x3F8;
 
@@ -56,8 +56,7 @@ impl fmt::Write for SerialPort {
 }
 
 lazy_static! {
-    pub static ref COM1_PORT: Mutex<SerialPort> =
-    Mutex::new(unsafe { SerialPort::new(COM1) });
+    pub static ref COM1_PORT: Mutex<SerialPort> = Mutex::new(unsafe { SerialPort::new(COM1) });
 }
 
 pub struct SerialLogger;
@@ -72,8 +71,8 @@ impl Log for SerialLogger {
 
         COM1_PORT.lock().write_str(match record.level() {
             Level::Error => "[ERROR] ",
-            Level::Warn  => "[WARN] ",
-            Level::Info  => "[INFO] ",
+            Level::Warn => "[WARN] ",
+            Level::Info => "[INFO] ",
             Level::Debug => "[DEBUG]",
             Level::Trace => "[TRACE]",
         });

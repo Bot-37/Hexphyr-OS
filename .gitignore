@@ -1,0 +1,3 @@
+**/target/
+*.iso
+kernel/qemu.log

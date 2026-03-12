@@ -1,0 +1,7 @@
+.git
+**/target
+**/*.iso
+bootloader/target
+kernel/target
+iso
+kernel/iso

@@ -1,6 +1,6 @@
 # Hexphyr OS Build System
 
-.PHONY: all bootloader kernel image clean run qemu
+.PHONY: all bootloader kernel image clean run qemu docker-build docker-sim
 
 # Toolchain
 RUSTC = rustc
@@ -77,4 +77,12 @@ help:
 	@echo "  image        - Create bootable ISO"
 	@echo "  run          - Run in QEMU"
 	@echo "  qemu-debug   - Run QEMU with GDB stub"
+	@echo "  docker-build - Build Docker image for kernel simulation"
+	@echo "  docker-sim   - Build image and run kernel simulation headless"
 	@echo "  clean        - Clean all build artifacts"
+
+docker-build:
+	docker build -t hexphyr-os:dev .
+
+docker-sim:
+	./tools/docker-sim.sh
