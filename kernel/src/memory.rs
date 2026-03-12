@@ -1,49 +1,58 @@
-// src/memory.rs
+// kernel/src/memory.rs
+//
+// Physical-memory frame allocator.
+//
+// This module provides a lock-free bump allocator over a fixed physical range.
+// It is intentionally minimal: it does not reclaim freed frames.  The intended
+// use pattern is to call it during early boot to allocate page-table frames,
+// then hand off to a full allocator once virtual memory is up.
+
 #![allow(dead_code)]
 
-use crate::BootInfo;
-use alloc::boxed::Box;
-use alloc::vec::Vec;
-use core::alloc::Layout;
-use core::ptr;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use x86_64::{
     PhysAddr,
     structures::paging::{FrameAllocator as X86FrameAllocator, PhysFrame, Size4KiB},
 };
-use linked_list_allocator::LockedHeap;
 
-/// A physical memory region (base physical address and length in bytes).
+/// A physical memory region described by a base address and byte length.
 #[derive(Debug, Clone, Copy)]
 pub struct MemoryRegion {
-    pub start: u64,
+    pub start:  u64,
     pub length: u64,
 }
 
-/// Simple bump-frame allocator over an assigned physical range.
-/// Not a full-featured reclaiming allocator, but OK for early use.
+/// Lock-free bump-pointer frame allocator.
+///
+/// Thread safety: `allocate_frame_addr` uses an atomic CAS loop so that
+/// concurrent allocations from multiple CPUs are safe without a mutex.
 pub struct FrameAllocator {
     next_frame: AtomicUsize,
-    end_frame: usize,
+    end_frame:  usize,
     frame_size: usize,
 }
 
 impl FrameAllocator {
+    /// Create a new allocator covering the physical range `[start, end)`.
+    ///
+    /// Returns `None` if the range is empty or `start >= end`.
     pub fn new(start: u64, end: u64) -> Option<Self> {
-        let frame_size = 4096usize;
-        let start_frame = (start as usize) / frame_size;
-        let end_frame = (end as usize) / frame_size;
+        const FRAME_SIZE: usize = 4096;
+        let start_frame = (start as usize).checked_add(FRAME_SIZE - 1)? / FRAME_SIZE;
+        let end_frame   = (end as usize) / FRAME_SIZE;
         if start_frame >= end_frame {
             return None;
         }
         Some(FrameAllocator {
             next_frame: AtomicUsize::new(start_frame),
-             end_frame,
-             frame_size,
+            end_frame,
+            frame_size: FRAME_SIZE,
         })
     }
 
-    /// Allocate a physical frame and return its physical address
+    /// Allocate one 4 KiB physical frame and return its base `PhysAddr`.
+    ///
+    /// Returns `None` when the pool is exhausted.
     pub fn allocate_frame_addr(&self) -> Option<PhysAddr> {
         loop {
             let current = self.next_frame.load(Ordering::Acquire);
@@ -51,88 +60,60 @@ impl FrameAllocator {
                 return None;
             }
             let next = current + 1;
-            if self.next_frame.compare_exchange(current, next, Ordering::SeqCst, Ordering::Relaxed).is_ok() {
-                let addr = (current * self.frame_size) as u64;
-                return Some(PhysAddr::new(addr));
+            match self.next_frame.compare_exchange(
+                current, next,
+                Ordering::SeqCst,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return Some(PhysAddr::new((current * self.frame_size) as u64)),
+                Err(_) => continue, // lost the race; retry
             }
         }
     }
 
-    /// helper for testing
-    pub fn total_frames(&self) -> usize {
-        self.end_frame - (self.next_frame.load(Ordering::Relaxed) - 1)
+    /// Number of frames remaining in the pool.
+    pub fn frames_remaining(&self) -> usize {
+        self.end_frame
+            .saturating_sub(self.next_frame.load(Ordering::Relaxed))
     }
 }
 
-/// Implement x86_64 FrameAllocator trait for 4 KiB frames (unsafe as required).
+/// Implement the x86_64 `FrameAllocator` trait so that `FrameAllocator` can be
+/// passed directly to `Mapper::map_to` and related functions.
+///
+/// # Safety
+/// Caller guarantees that the physical range supplied to `FrameAllocator::new`
+/// does not overlap with memory already in use.
 unsafe impl X86FrameAllocator<Size4KiB> for FrameAllocator {
     fn allocate_frame(&mut self) -> Option<PhysFrame> {
-        // Use the atomic-backed allocate function and convert to PhysFrame
         self.allocate_frame_addr()
-        .map(|addr| PhysFrame::containing_address(addr))
+            .map(|addr| PhysFrame::containing_address(addr))
     }
 }
 
-/// Simple wrapper type so other modules can take a mutable reference to the allocator
+/// Borrows a `FrameAllocator` by shared reference while still satisfying the
+/// `x86_64::FrameAllocator` trait (which takes `&mut self`).
+///
+/// This allows passing a single `FrameAllocator` into multiple functions that
+/// each consume an `impl FrameAllocator` without transferring ownership.
 pub struct FrameAllocatorRef<'a> {
     inner: &'a FrameAllocator,
 }
 
 impl<'a> FrameAllocatorRef<'a> {
     pub fn new(inner: &'a FrameAllocator) -> Self {
-        Self { inner }
+        FrameAllocatorRef { inner }
     }
 }
 
+/// # Safety
+/// Same contract as `FrameAllocator`'s implementation.
 unsafe impl<'a> X86FrameAllocator<Size4KiB> for FrameAllocatorRef<'a> {
     fn allocate_frame(&mut self) -> Option<PhysFrame> {
-        // we rely on atomic ops inside FrameAllocator: safe to call from a mutable ref shim
-        self.inner.allocate_frame_addr().map(|a| PhysFrame::containing_address(a))
+        self.inner
+            .allocate_frame_addr()
+            .map(|addr| PhysFrame::containing_address(addr))
     }
 }
 
-/// Kernel heap allocator (global)
-#[global_allocator]
-static HEAP_ALLOCATOR: LockedHeap = LockedHeap::empty();
 
-/// Initialize memory: set up kernel heap and create a global (leaked) FrameAllocator.
-///
-/// Returns a `'static` reference to the frame allocator and the heap base/size used.
-///
-/// Why leak Box: we need a `'static` FrameAllocator reference usable across the kernel.
-/// This is acceptable during early kernel boot; later we can replace with a proper global.
-///
-/// Note: This function does NOT parse UEFI memory map fully; it selects a conservative region
-/// after the kernel image to host the heap and frame allocator.
-pub fn init(boot: &BootInfo) -> (&'static FrameAllocator, usize, usize) {
-    // choose heap start = page-align(kernel_end)
-    let heap_start_phys = align_up(boot.kernel_end_phys, 0x1000);
-    let heap_size: usize = 8 * 1024 * 1024; // 8 MiB for kernel heap
-
-    // pick frame allocator region immediately after heap (128 MiB window)
-    let frame_alloc_start = heap_start_phys + (heap_size as u64);
-    let frame_alloc_end = frame_alloc_start + (128 * 1024 * 1024u64); // 128 MiB reserved for frames
-
-    // create frame allocator and leak it to static lifetime
-    let fa = FrameAllocator::new(frame_alloc_start, frame_alloc_end)
-    .expect("failed to create FrameAllocator");
-    let fa_static: &'static FrameAllocator = Box::leak(Box::new(fa));
-
-    // initialize global heap (linked_list_allocator expects pointer+size as usize)
-    unsafe {
-        HEAP_ALLOCATOR.lock().init(heap_start_phys as usize, heap_size);
-    }
-
-    // test allocations (optional)
-    // let _ = HEAP_ALLOCATOR.lock(); // if you want to use the allocator now
-
-    (fa_static, heap_start_phys as usize, heap_size)
-}
-
-fn align_up(addr: u64, align: u64) -> u64 {
-    (addr + align - 1) & !(align - 1)
-}
-
-fn align_down(addr: u64, align: u64) -> u64 {
-    addr & !(align - 1)
-}

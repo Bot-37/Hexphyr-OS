@@ -16,12 +16,28 @@ impl SerialPort {
 
     pub fn init(&mut self) {
         unsafe {
+            // Disable all interrupts
             self.outb(1, 0x00);
+            // Set baud rate divisor (DLAB=1): 115200 / 3 = 38400 baud
             self.outb(3, 0x80);
             self.outb(0, 0x03);
             self.outb(1, 0x00);
+            // 8 bits, no parity, one stop bit (DLAB=0)
             self.outb(3, 0x03);
+            // Enable FIFO, clear TX/RX queues, 14-byte threshold
             self.outb(2, 0xC7);
+            // Modem control: RTS/DSR, IRQ enable, loopback for self-test
+            self.outb(4, 0x1E);
+
+            // Loopback self-test: write 0xAE and verify it echoes back
+            self.outb(0, 0xAE);
+            if self.inb(0) != 0xAE {
+                // Serial hardware not present or malfunctioning; silently continue
+                // (output will be lost, but the kernel can still run)
+                return;
+            }
+
+            // Self-test passed, disable loopback and enable normal operation
             self.outb(4, 0x0B);
         }
     }
@@ -68,16 +84,18 @@ impl Log for SerialLogger {
 
     fn log(&self, record: &Record) {
         use core::fmt::Write;
-
-        COM1_PORT.lock().write_str(match record.level() {
+        // Acquire the lock ONCE per log call to prevent deadlock on reentrant
+        // use (e.g. an exception triggered inside a previous log call).
+        let mut port = COM1_PORT.lock();
+        let prefix = match record.level() {
             Level::Error => "[ERROR] ",
-            Level::Warn => "[WARN] ",
-            Level::Info => "[INFO] ",
-            Level::Debug => "[DEBUG]",
-            Level::Trace => "[TRACE]",
-        });
-
-        let _ = writeln!(COM1_PORT.lock(), "{}", record.args());
+            Level::Warn  => "[WARN]  ",
+            Level::Info  => "[INFO]  ",
+            Level::Debug => "[DEBUG] ",
+            Level::Trace => "[TRACE] ",
+        };
+        let _ = port.write_str(prefix);
+        let _ = writeln!(port, "{}", record.args());
     }
 
     fn flush(&self) {}

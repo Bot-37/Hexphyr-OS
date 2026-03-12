@@ -1,0 +1,14 @@
+# Hexphyr OS requires the nightly toolchain for:
+#   * abi_x86_interrupt  — extern "x86-interrupt" calling convention used by
+#                          all IDT handlers (interrupts.rs / gdt.rs).
+#   * Other bare-metal / OS-dev features as the project grows.
+#
+# Pin to a specific nightly date for reproducibility.
+# Update regularly and run `cargo update` to pull compatible crate versions.
+[toolchain]
+channel  = "nightly"
+targets  = [
+    "x86_64-unknown-none",       # kernel
+    "x86_64-unknown-uefi",       # UEFI bootloader
+]
+components = ["rust-src", "rustfmt", "clippy"]

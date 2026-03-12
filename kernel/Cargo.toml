@@ -4,16 +4,19 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-x86_64 = { version = "0.14.13", default-features = false, features = ["instructions"] }
+x86_64 = { version = "0.14.13", default-features = false, features = ["instructions", "abi_x86_interrupt"] }
 spin = "0.9.8"
 log = { version = "0.4", default-features = false }
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 
 [profile.dev]
 panic = "abort"
+overflow-checks = true
 
 [profile.release]
 panic = "abort"
 lto = true
 opt-level = "s"
 codegen-units = 1
+overflow-checks = true
+strip = "debuginfo"

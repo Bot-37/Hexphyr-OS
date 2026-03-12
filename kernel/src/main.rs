@@ -1,10 +1,15 @@
 #![no_std]
 #![no_main]
+// Required for `extern "x86-interrupt" fn` in interrupts.rs / gdt.rs.
+#![feature(abi_x86_interrupt)]
 
 use core::{hint::spin_loop, panic::PanicInfo};
 use log::{error, info};
 
+mod gdt;
 mod gui;
+mod interrupts;
+mod memory;
 mod multiboot;
 mod multiboot2_header;
 mod serial;
@@ -16,12 +21,23 @@ use multiboot::MultibootInfo;
 
 #[no_mangle]
 pub extern "C" fn _start(multiboot_info_addr: u64) -> ! {
+    // Serial must be first so every subsequent log call has an output channel.
     serial::init();
     log::set_logger(&serial::LOGGER).ok();
     log::set_max_level(log::LevelFilter::Info);
 
-    info!("Hexphyr kernel booting");
-    info!("Multiboot info pointer: {:#x}", multiboot_info_addr);
+    info!("Hexphyr OS — kernel entry");
+
+    // Initialize the production GDT (with TSS/IST) BEFORE loading the IDT so
+    // that the double-fault IST stack index references a valid TSS.
+    gdt::init();
+    info!("GDT loaded");
+
+    // Load the IDT.  From this point onward CPU exceptions are handled.
+    interrupts::init();
+    info!("IDT loaded");
+
+    info!("Multiboot2 info pointer: {:#x}", multiboot_info_addr);
 
     let multiboot_info = unsafe { MultibootInfo::new(multiboot_info_addr as usize) };
     let Some(multiboot_info) = multiboot_info else {

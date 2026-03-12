@@ -22,15 +22,17 @@ bootloader:
 
 kernel:
 	cd $(KERNEL_DIR) && $(CARGO) build --release
-	$(OBJCOPY) -O binary \
-		$(KERNEL_DIR)/target/x86_64-unknown-none/release/kernel \
-		$(KERNEL_DIR)/kernel.bin
 
 image: bootloader kernel
-	mkdir -p $(ISO_DIR)/EFI/BOOT
+	mkdir -p $(ISO_DIR)/boot/grub $(ISO_DIR)/EFI/BOOT
+	# UEFI path: firmware loads this when booted via UEFI
 	cp $(BOOTLOADER_DIR)/target/x86_64-unknown-uefi/release/bootloader.efi \
 		$(ISO_DIR)/EFI/BOOT/BOOTX64.EFI
-	cp $(KERNEL_DIR)/kernel.bin $(ISO_DIR)/kernel.elf
+	# GRUB/Multiboot2 path: GRUB loads the kernel ELF directly
+	cp $(KERNEL_DIR)/target/x86_64-unknown-none/release/kernel \
+		$(ISO_DIR)/boot/kernel.elf
+	# GRUB configuration (grub-mkrescue reads boot/grub/grub.cfg from the ISO root)
+	cp $(KERNEL_DIR)/iso/boot/grub/grub.cfg $(ISO_DIR)/boot/grub/grub.cfg
 	grub-mkrescue -o hexphyr.iso $(ISO_DIR)
 
 clean:
@@ -38,7 +40,6 @@ clean:
 	cd $(KERNEL_DIR) && $(CARGO) clean
 	rm -rf $(ISO_DIR)
 	rm -f hexphyr.iso
-	rm -f $(KERNEL_DIR)/kernel.bin
 
 run: image
 	$(QEMU) \

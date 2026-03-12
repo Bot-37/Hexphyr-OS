@@ -1,4 +1,13 @@
-/* Multiboot2 bootstrap: enter in 32-bit protected mode, then switch to 64-bit long mode. */
+/* Multiboot2 bootstrap: enter in 32-bit protected mode, then switch to 64-bit long mode.
+ *
+ * Security hardening applied here:
+ *   - Explicit BSS zeroing (defense-in-depth; GRUB also zeroes BSS per spec)
+ *   - EFER.NXE  (CR4 No-Execute Enable)  — prevents data pages from being executed
+ *   - CR0.WP    (Write Protect)          — prevents kernel from writing read-only pages
+ *   - CR4.SMEP  (bit 20)                 — checked via CPUID leaf 7 before enabling
+ *   - CR4.SMAP  (bit 21)                 — checked via CPUID leaf 7 before enabling
+ *   - CR4.UMIP  (bit 11)                 — checked via CPUID leaf 7 ECX before enabling
+ */
 
 .section .text
 .code32
@@ -8,11 +17,26 @@ _multiboot_entry:
     cli
     cld
 
+    /*
+     * Preserve the multiboot info pointer (EBX) across the BSS-clear in %esi.
+     * rep stosl clobbers %eax/%ecx/%edi but leaves %esi intact.
+     */
+    movl %ebx, %esi
+
+    /* --- Explicitly zero BSS (page tables must be all-zero before use) --- */
+    movl $_bss_start, %edi
+    movl $_bss_end,   %ecx
+    subl %edi, %ecx          /* byte count */
+    shrl $2, %ecx            /* dword count (BSS is 4-byte aligned by linker) */
+    xorl %eax, %eax
+    rep stosl
+
+    /* Set up the bootstrap stack (lives in BSS, now cleanly zeroed). */
     movl $boot_stack_top, %esp
     andl $-16, %esp
 
-    /* GRUB puts the multiboot info pointer in EBX. Keep it for Rust _start(RDI). */
-    movl %ebx, %edi
+    /* Restore multiboot ptr into %edi so it survives to RDI in long mode. */
+    movl %esi, %edi
 
     call setup_page_tables
     call enable_long_mode
@@ -51,17 +75,54 @@ enable_long_mode:
     movl $page_table_l4, %eax
     movl %eax, %cr3
 
+    /* CR4: PAE is mandatory.  SMEP (bit 20), SMAP (bit 21), UMIP (bit 11)
+     * are enabled here only if CPUID confirms support (EBX/ECX of leaf 7). */
     movl %cr4, %eax
-    orl $0x20, %eax       /* CR4.PAE */
-    movl %eax, %cr4
+    orl  $0x00000020, %eax   /* CR4.PAE  (bit 5)  — required for long mode */
 
-    movl $0xC0000080, %ecx /* EFER MSR */
+    /* CPUID leaf 7, sub-leaf 0 → structured extended features */
+    pushl %ebx               /* save caller's %ebx across CPUID */
+    movl  $7, %ecx
+    xorl  %eax, %eax
+    cpuid                    /* EBX = extended features, ECX = more features */
+    /* SMEP: EBX bit 7 */
+    testl $(1 << 7),  %ebx
+    jz    1f
+    orl   $0x00100000, (%esp)  /* scratch: set SMEP bit (bit 20) in saved eax */
+    /* Re-read and set directly: simpler to just or into local register */
+1:
+    movl  %cr4, %eax
+    orl   $0x00000020, %eax  /* PAE always */
+    movl  $7, %ecx
+    pushl %eax
+    xorl  %eax, %eax
+    cpuid
+    popl  %eax
+    testl $(1 << 7),  %ebx
+    jz    .no_smep
+    orl   $(1 << 20), %eax   /* CR4.SMEP */
+.no_smep:
+    testl $(1 << 20), %ebx
+    jz    .no_smap
+    orl   $(1 << 21), %eax   /* CR4.SMAP */
+.no_smap:
+    testl $(1 << 2),  %ecx
+    jz    .no_umip
+    orl   $(1 << 11), %eax   /* CR4.UMIP */
+.no_umip:
+    popl  %ebx               /* restore caller %ebx */
+    movl  %eax, %cr4
+
+    movl $0xC0000080, %ecx   /* IA32_EFER MSR */
     rdmsr
-    orl $0x100, %eax      /* EFER.LME */
+    orl  $0x00000100, %eax   /* EFER.LME  (bit 8)  — enable long mode */
+    orl  $0x00000800, %eax   /* EFER.NXE  (bit 11) — enable No-Execute */
     wrmsr
 
     movl %cr0, %eax
-    orl $0x80000000, %eax /* CR0.PG */
+    orl  $0x80000000, %eax   /* CR0.PG  (bit 31) — enable paging */
+    orl  $0x00010000, %eax   /* CR0.WP  (bit 16) — Write Protect (kernel cannot
+                              *                     write to read-only pages) */
     movl %eax, %cr0
 
     ret
