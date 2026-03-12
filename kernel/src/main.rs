@@ -109,3 +109,7 @@ fn panic(info: &PanicInfo) -> ! {
 fn oom(layout: core::alloc::Layout) -> ! {
     panic!("Allocation error: {:?}", layout);
 }
+
+
+
+s = int(input("Enter the ne"))
