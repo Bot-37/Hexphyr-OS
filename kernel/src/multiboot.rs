@@ -14,26 +14,13 @@
 //   * All pointer arithmetic is bounds-checked against `total_size` before
 //     any read is attempted.
 
+use bootabi::{
+    FramebufferInfo, PIXEL_FORMAT_BGR, PIXEL_FORMAT_RGB, PIXEL_FORMAT_UNKNOWN,
+};
 use core::{mem, ptr};
 
 const TAG_TYPE_END:         u32 = 0;
 const TAG_TYPE_FRAMEBUFFER: u32 = 8;
-
-#[derive(Clone, Copy, Debug)]
-pub struct FramebufferInfo {
-    pub address:              u64,
-    pub pitch:                u32,
-    pub width:                u32,
-    pub height:               u32,
-    pub bpp:                  u8,
-    pub buffer_type:          u8,
-    pub red_field_position:   u8,
-    pub red_mask_size:        u8,
-    pub green_field_position: u8,
-    pub green_mask_size:      u8,
-    pub blue_field_position:  u8,
-    pub blue_mask_size:       u8,
-}
 
 #[derive(Clone, Copy)]
 pub struct MultibootInfo {
@@ -163,17 +150,25 @@ fn parse_framebuffer_tag(tag_ptr: *const u8, tag_size: usize) -> Option<Framebuf
 
     Some(FramebufferInfo {
         address,
+        size: u64::from(pitch) * u64::from(height),
         pitch,
         width,
         height,
         bpp,
-        buffer_type,
+        pixel_format: if buffer_type == 1 {
+            PIXEL_FORMAT_BGR
+        } else if buffer_type == 0 {
+            PIXEL_FORMAT_RGB
+        } else {
+            PIXEL_FORMAT_UNKNOWN
+        },
         red_field_position,
         red_mask_size,
         green_field_position,
         green_mask_size,
         blue_field_position,
         blue_mask_size,
+        reserved: 0,
     })
 }
 

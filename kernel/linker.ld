@@ -2,7 +2,7 @@ ENTRY(_multiboot_entry)
 
 SECTIONS
 {
-    . = 1M;
+    . = 64M;
 
     .multiboot_header :
     {
@@ -42,4 +42,3 @@ SECTIONS
         *(.note.GNU-stack)   /* Mark stack non-executable at link time */
     }
 }
-

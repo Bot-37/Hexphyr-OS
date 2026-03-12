@@ -1,89 +1,54 @@
-# Hexphyr OS Build System
+.PHONY: all bootloader kernel release release-artifacts run-ovmf run-iso run-secureboot run-ovmf-headless clean help docker-build docker-sim
 
-.PHONY: all bootloader kernel image clean run qemu docker-build docker-sim
+PYTHON ?= python3
+IMAGE_NAME ?= hexphyr-os:dev
 
-# Toolchain
-RUSTC = rustc
-CARGO = cargo
-OBJCOPY = rust-objcopy
-QEMU = qemu-system-x86_64
-
-# Directories
-BOOTLOADER_DIR = bootloader
-KERNEL_DIR = kernel
-ISO_DIR = iso
-TOOLS_DIR = tools
-
-# Targets
-all: bootloader kernel image
+all: release
 
 bootloader:
-	cd $(BOOTLOADER_DIR) && $(CARGO) build --release
+	cd bootloader && cargo build --release
 
 kernel:
-	cd $(KERNEL_DIR) && $(CARGO) build --release
+	cd kernel && cargo build --release
 
-image: bootloader kernel
-	mkdir -p $(ISO_DIR)/boot/grub $(ISO_DIR)/EFI/BOOT
-	# UEFI path: firmware loads this when booted via UEFI
-	cp $(BOOTLOADER_DIR)/target/x86_64-unknown-uefi/release/bootloader.efi \
-		$(ISO_DIR)/EFI/BOOT/BOOTX64.EFI
-	# GRUB/Multiboot2 path: GRUB loads the kernel ELF directly
-	cp $(KERNEL_DIR)/target/x86_64-unknown-none/release/kernel \
-		$(ISO_DIR)/boot/kernel.elf
-	# GRUB configuration (grub-mkrescue reads boot/grub/grub.cfg from the ISO root)
-	cp $(KERNEL_DIR)/iso/boot/grub/grub.cfg $(ISO_DIR)/boot/grub/grub.cfg
-	grub-mkrescue -o hexphyr.iso $(ISO_DIR)
+release: release-artifacts
+
+release-artifacts:
+	$(PYTHON) tools/mkimage.py
+
+run-ovmf: release-artifacts
+	./tools/run-ovmf.sh
+
+run-iso: release-artifacts
+	HEXPHYR_BOOT_MODE=iso ./tools/run-ovmf.sh
+
+run-secureboot: release-artifacts
+	./tools/run-secureboot.sh
+
+run-ovmf-headless: release-artifacts
+	HEXPHYR_HEADLESS=1 HEXPHYR_TIMEOUT_SEC=$${HEXPHYR_TIMEOUT_SEC:-20} ./tools/run-ovmf.sh
 
 clean:
-	cd $(BOOTLOADER_DIR) && $(CARGO) clean
-	cd $(KERNEL_DIR) && $(CARGO) clean
-	rm -rf $(ISO_DIR)
-	rm -f hexphyr.iso
-
-run: image
-	$(QEMU) \
-		-machine q35 \
-		-cpu qemu64 \
-		-smp 4 \
-		-m 2G \
-		-drive if=pflash,format=raw,readonly=on,file=/usr/share/ovmf/OVMF_CODE.fd \
-		-drive if=pflash,format=raw,readonly=on,file=/usr/share/ovmf/OVMF_VARS.fd \
-		-drive format=raw,file=fat:rw:$(ISO_DIR) \
-		-net none \
-		-serial stdio \
-		-no-reboot \
-		-no-shutdown
-
-qemu-debug: image
-	$(QEMU) \
-		-machine q35 \
-		-cpu qemu64 \
-		-smp 4 \
-		-m 2G \
-		-drive if=pflash,format=raw,readonly=on,file=/usr/share/ovmf/OVMF_CODE.fd \
-		-drive if=pflash,format=raw,readonly=on,file=/usr/share/ovmf/OVMF_VARS.fd \
-		-drive format=raw,file=fat:rw:$(ISO_DIR) \
-		-net none \
-		-serial stdio \
-		-no-reboot \
-		-no-shutdown \
-		-s -S
-
-help:
-	@echo "Hexphyr OS Build Targets:"
-	@echo "  all          - Build everything"
-	@echo "  bootloader   - Build UEFI bootloader"
-	@echo "  kernel       - Build kernel"
-	@echo "  image        - Create bootable ISO"
-	@echo "  run          - Run in QEMU"
-	@echo "  qemu-debug   - Run QEMU with GDB stub"
-	@echo "  docker-build - Build Docker image for kernel simulation"
-	@echo "  docker-sim   - Build image and run kernel simulation headless"
-	@echo "  clean        - Clean all build artifacts"
+	cargo clean --manifest-path bootloader/Cargo.toml
+	cargo clean --manifest-path kernel/Cargo.toml
+	rm -rf dist
 
 docker-build:
-	docker build -t hexphyr-os:dev .
+	docker build -t $(IMAGE_NAME) .
 
 docker-sim:
 	./tools/docker-sim.sh
+
+help:
+	@echo "Hexphyr OS release targets:"
+	@echo "  release             Build the UEFI release artifacts"
+	@echo "  release-artifacts   Build the UEFI ISO, EFI image, and manifest bundle"
+	@echo "  run-ovmf            Boot the EFI disk image in QEMU/OVMF"
+	@echo "  run-iso             Boot the UEFI ISO in QEMU/OVMF"
+	@echo "  run-secureboot      Boot the signed EFI image with Secure Boot firmware"
+	@echo "  run-ovmf-headless   Headless QEMU/OVMF smoke test"
+	@echo "  bootloader          Build the release UEFI bootloader"
+	@echo "  kernel              Build the release kernel"
+	@echo "  docker-build        Build the containerized release environment"
+	@echo "  docker-sim          Build the container and run a headless QEMU smoke test"
+	@echo "  clean               Remove cargo outputs and dist artifacts"

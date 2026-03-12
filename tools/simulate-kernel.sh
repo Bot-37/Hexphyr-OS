@@ -2,16 +2,10 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-KERNEL_DIR="${ROOT_DIR}/kernel"
-
-cd "${KERNEL_DIR}"
-./build.sh
+python3 "${ROOT_DIR}/tools/mkimage.py"
 
 # Default to headless for non-interactive simulation.
 export HEXPHYR_HEADLESS="${HEXPHYR_HEADLESS:-1}"
+export HEXPHYR_TIMEOUT_SEC="${SIM_TIMEOUT_SEC:-${HEXPHYR_TIMEOUT_SEC:-25}}"
 
-if [ -n "${SIM_TIMEOUT_SEC:-}" ]; then
-  timeout "${SIM_TIMEOUT_SEC}" ./run.sh || true
-else
-  ./run.sh
-fi
+"${ROOT_DIR}/tools/run-ovmf.sh" || true

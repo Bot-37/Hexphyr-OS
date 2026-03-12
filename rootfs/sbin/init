@@ -1,0 +1,2 @@
+Hexphyr init placeholder
+Expected runtime contract: mount initramfs, attach tty0, spawn /bin/sh.

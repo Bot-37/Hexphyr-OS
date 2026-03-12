@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE_NAME="${IMAGE_NAME:-hexphyr-os:dev}"
-SIM_TIMEOUT_SEC="${SIM_TIMEOUT_SEC:-25}"
+SIM_TIMEOUT_SEC="${SIM_TIMEOUT_SEC:-30}"
 
 docker build -t "${IMAGE_NAME}" "${ROOT_DIR}"
 

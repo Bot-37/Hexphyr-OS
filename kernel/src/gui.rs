@@ -1,7 +1,8 @@
+use bootabi::{
+    FramebufferInfo, PIXEL_FORMAT_BGR, PIXEL_FORMAT_BITMASK, PIXEL_FORMAT_RGB,
+};
 use core::cmp::{max, min};
 use core::ptr::write_volatile;
-
-use crate::multiboot::FramebufferInfo;
 
 pub struct Framebuffer {
     ptr: *mut u8,
@@ -80,13 +81,26 @@ impl Framebuffer {
     }
 
     fn pack_color(&self, r: u8, g: u8, b: u8) -> u32 {
-        if self.info.buffer_type != 1 {
-            return (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b);
+        match self.info.pixel_format {
+            PIXEL_FORMAT_RGB => {
+                (u32::from(b) << 16) | (u32::from(g) << 8) | u32::from(r)
+            }
+            PIXEL_FORMAT_BGR => {
+                (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b)
+            }
+            PIXEL_FORMAT_BITMASK => {
+                pack_channel(r, self.info.red_field_position, self.info.red_mask_size)
+                    | pack_channel(
+                        g,
+                        self.info.green_field_position,
+                        self.info.green_mask_size,
+                    )
+                    | pack_channel(b, self.info.blue_field_position, self.info.blue_mask_size)
+            }
+            _ => {
+                (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b)
+            }
         }
-
-        pack_channel(r, self.info.red_field_position, self.info.red_mask_size)
-            | pack_channel(g, self.info.green_field_position, self.info.green_mask_size)
-            | pack_channel(b, self.info.blue_field_position, self.info.blue_mask_size)
     }
 }
 

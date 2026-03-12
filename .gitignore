@@ -1,3 +1,6 @@
 **/target/
 *.iso
+*.img
+*.fd
 kernel/qemu.log
+dist/

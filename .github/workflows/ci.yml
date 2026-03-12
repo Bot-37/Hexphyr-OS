@@ -1,0 +1,56 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-boot:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+          components: rust-src, rustfmt, clippy
+          targets: x86_64-unknown-none, x86_64-unknown-uefi
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cpio \
+            dosfstools \
+            efitools \
+            gdisk \
+            mtools \
+            openssl \
+            ovmf \
+            python3 \
+            qemu-system-x86 \
+            sbsigntool \
+            uuid-runtime \
+            xorriso
+
+      - name: Generate Secure Boot owner keys
+        run: ./tools/secureboot/generate-owner-keys.sh .ci/secureboot
+
+      - name: Build release artifacts
+        env:
+          HEXPHYR_SB_KEY: .ci/secureboot/hexphyr-owner.key
+          HEXPHYR_SB_CERT: .ci/secureboot/hexphyr-owner.crt
+        run: make release-artifacts
+
+      - name: Headless QEMU smoke test
+        env:
+          HEXPHYR_HEADLESS: "1"
+          HEXPHYR_TIMEOUT_SEC: "20"
+        run: make run-ovmf-headless
+
+      - name: Upload release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: hexphyr-release
+          path: dist/release/artifacts
