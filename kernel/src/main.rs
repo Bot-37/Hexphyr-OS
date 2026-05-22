@@ -58,8 +58,16 @@ pub extern "C" fn _start(multiboot_info_addr: u64) -> ! {
     kernel_entry(&boot_info)
 }
 
+/// Entry point from the UEFI bootloader.
+///
+/// # Safety
+/// The caller must ensure that `boot_info` is a valid pointer to a `BootInfo`
+/// structure that remains valid for the duration of the kernel's execution.
+// Security: This function accepts and dereferences a raw pointer from the
+// bootloader. It must be marked `unsafe` to enforce Rust's safety contract
+// that external callers must guarantee pointer validity.
 #[no_mangle]
-pub extern "C" fn _uefi_start(boot_info: *const BootInfo) -> ! {
+pub unsafe extern "C" fn _uefi_start(boot_info: *const BootInfo) -> ! {
     init_runtime();
 
     if boot_info.is_null() {
